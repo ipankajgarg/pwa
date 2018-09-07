@@ -1,5 +1,15 @@
-var STATIC = 'staticv4';
+importScripts('/src/js/idb.js');
+
+var STATIC = 'staticv3';
 var DYNAMIC = 'dynamicv4';
+
+var dbPromise = idb.open('post-data', 2, function(database) {
+  if (!database.objectStoreNames.contains('posts')) {
+    var posts = database.createObjectStore('posts', { keyPath: 'id' });
+
+    var notes = database.createObjectStore('notes', { autoIncrement: true });
+  }
+});
 
 self.addEventListener('install', function(event) {
   console.log('[Service Worker] Installing Service Worker ...', event);
@@ -9,6 +19,7 @@ self.addEventListener('install', function(event) {
       return cache.addAll([
         '/',
         '/offline.html',
+        '/src/js/idb.js',
         '/src/css/app.css',
         '/src/css/feed.css',
         '/src/js/app.js',
@@ -60,49 +71,136 @@ self.addEventListener('activate', function(event) {
 //   );
 // });
 // ------------------------------------------------------------------------
-
+//
 //get data from network if it fails then access from cache
-// self.addEventListener('fetch', function(event) {
-//   event.respondWith(
-//     fetch(event.request).catch(function(err) {
-//       return caches.match(event.request).then(function(response) {
-//         if (response) {
-//           return caches.match(event.request);
-//         }
-//         console.log(response);
-//         return caches.match('/offline.html');
-//       });
-//     })
-//   );
-// });
-
-//If a request doesn't match anything in the cache, get it from the network,
-// send it to the page and add it to the cache at the same time
 
 self.addEventListener('fetch', function(event) {
   if (
-    event.request.url.indexOf(
-      'https://fonts.googleapis.com/css?family=Roboto:400,700'
-    ) > -1
+    event.request.url.indexOf('https://pwagram-e4028.firebaseio.com/posts') > -1
   ) {
-    console.log(event.request.url.indexOf, 'true');
-  }
-  event.respondWith(
-    caches.open(DYNAMIC).then(function(cache) {
-      return caches
-        .match(event.request)
-        .then(function(response) {
-          return (
-            response ||
-            fetch(event.request).then(function(response) {
-              cache.put(event.request.url, response.clone());
-              return response;
+    event.respondWith(
+      fetch(event.request).then(function(response) {
+        var clonedRes = response.clone();
+        clonedRes.json().then(function(data) {
+          dbPromise
+            .then(function(db) {
+              console.log('mydb', db);
+              var tx = db.transaction('posts', 'readwrite');
+              var store = tx.objectStore('posts');
+              console.log(store);
+              store.clear().then(function() {
+                for (key in data) {
+                  store.put(data[key]).then(function() {
+                    console.log('adding');
+                  });
+                }
+              });
+
+              return tx.complete;
             })
-          );
-        })
-        .catch(function(err) {
-          return caches.match('offline.html');
+            .then(function() {
+              console.log('data added into indexed db');
+            });
         });
-    })
-  );
+        return response;
+      })
+    );
+  } else {
+    event.respondWith(
+      fetch(event.request).catch(function(err) {
+        return caches.match(event.request).then(function(response) {
+          if (response) {
+            return caches.match(event.request);
+          }
+          console.log(response);
+          return caches.match('/offline.html');
+        });
+      })
+    );
+  }
 });
+
+self.addEventListener('sync', function(event) {
+  console.log('sync event');
+  if (event.tag == 'myFirstSync') {
+    event.waitUntil(
+      dbPromise
+        .then(db => {
+          var tx = db.transaction('posts', 'readonly');
+          var store = tx.objectStore('posts');
+          return store.getAll();
+        })
+        .then(data => {
+          console.log('data', data[0]);
+          fetch(
+            'https://us-central1-pwagram-e4028.cloudfunctions.net/newdata',
+            {
+              method: 'POST',
+              header: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json'
+              },
+              body: JSON.stringify(data[0])
+            }
+          )
+            .then(res => {
+              return res.json();
+            })
+            .then(data => console.log(data))
+            .catch(err => console.log(err));
+        })
+    );
+  }
+
+  //
+});
+
+self.addEventListener('notificationclick', function(event) {
+  var notification = event.notification;
+  var action = event.action;
+  notification.close();
+  // console.log(notification);
+  // if (action === 'confirm') {
+  //   console.log('confirm was chosen');
+  //   notification.close();
+  // } else {
+  //   conosle.log(action);
+  //   notification.close();
+  // }
+});
+
+self.addEventListener('notificationclose', function(event) {
+  console.log('notification was close', event);
+});
+
+//
+//If a request doesn't match anything in the cache, get it from the network,
+// send it to the page and add it to the cache at the same time
+
+// self.addEventListener('fetch', function(event) {
+//   if (
+//     event.request.url.indexOf(
+//       'https://fonts.googleapis.com/css?family=Roboto:400,700'
+//     ) > -1
+//   ) {
+//     console.log(event.request.url.indexOf, 'true');
+//   }
+//   event.respondWith(
+//     caches.open(DYNAMIC).then(function(cache) {
+//       return caches
+//         .match(event.request)
+//         .then(function(response) {
+//           return (
+//             response ||
+//             fetch(event.request).then(function(response) {
+//               cache.put(event.request.url, response.clone());
+//               return response;
+//             })
+//           );
+//         })
+//         .catch(function(err) {
+//           return caches.match('offline.html');
+//         });
+//     })
+//   );
+// });
