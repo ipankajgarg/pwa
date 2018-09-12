@@ -1,13 +1,11 @@
 importScripts('/src/js/idb.js');
 
-var STATIC = 'staticv3';
+var STATIC = 'staticv21';
 var DYNAMIC = 'dynamicv4';
 
-var dbPromise = idb.open('post-data', 2, function(database) {
+var dbPromise = idb.open('data', 3, function(database) {
   if (!database.objectStoreNames.contains('posts')) {
     var posts = database.createObjectStore('posts', { keyPath: 'id' });
-
-    var notes = database.createObjectStore('notes', { autoIncrement: true });
   }
 });
 
@@ -133,7 +131,7 @@ self.addEventListener('sync', function(event) {
         .then(data => {
           console.log('data', data[0]);
           fetch(
-            'https://us-central1-pwagram-e4028.cloudfunctions.net/newdata',
+            'https://us-central1-pwagram-e4028.cloudfunctions.net/newdata.json',
             {
               method: 'POST',
               header: {
@@ -158,19 +156,51 @@ self.addEventListener('sync', function(event) {
 self.addEventListener('notificationclick', function(event) {
   var notification = event.notification;
   var action = event.action;
-  notification.close();
-  // console.log(notification);
-  // if (action === 'confirm') {
-  //   console.log('confirm was chosen');
-  //   notification.close();
-  // } else {
-  //   conosle.log(action);
-  //   notification.close();
-  // }
+
+  console.log(notification);
+  if (action === 'confirm') {
+    console.log('confirm was chosen');
+    notification.close();
+  } else {
+    console.log(action);
+    event.waitUntil(
+      clients.matchAll().then(function(clis) {
+        var client = clis.find(function(c) {
+          return c.visibilityState === 'visible';
+        });
+        if (client !== undefined) {
+          client.navigate(notification.data.url);
+          client.focus();
+        } else {
+          clients.openWindow(notification.data.url);
+        }
+        notification.close();
+      })
+    );
+  }
 });
 
 self.addEventListener('notificationclose', function(event) {
   console.log('notification was close', event);
+});
+
+self.addEventListener('push', function(event) {
+  console.log('push notification received');
+
+  var data = { title: 'New', content: 'something new happened', openUrl: '/' };
+  if (event.data) {
+    data = JSON.parse(event.data.text());
+  }
+
+  var options = {
+    body: data.content,
+    icon: '/src/images/icons/app-icon-96x96.png',
+    badge: '/src/images/icons/app-icon-96x96.png',
+    data: {
+      url: data.openUrl
+    }
+  };
+  event.waitUntil(self.registration.showNotification(data.title, options));
 });
 
 //

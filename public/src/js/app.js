@@ -29,6 +29,7 @@ window.addEventListener('beforeinstallprompt', function(event) {
 function displayConfirmedNotification() {
   if ('serviceWorker' in navigator) {
     var options = {
+      body: 'notification testing',
       icon: '/src/images/icons/app-icon-96x96.png',
       image: '/src/images/sf-boat.jpg',
       dir: 'ltr',
@@ -61,18 +62,61 @@ function displayConfirmedNotification() {
   // new Notification('successfully subscribed', options);
 }
 
+function configurePushSub() {
+  if (!('serviceWorker' in navigator)) {
+    return;
+  }
+  navigator.serviceWorker.ready
+    .then(function(swreg) {
+      reg = swreg;
+      return swreg.pushManager.getSubscription();
+    })
+    .then(function(sub) {
+      if (sub === null) {
+        console.log('its null');
+        var vapidPublicKey =
+          'BJEBjKzTL31H1jVQ_WrBRCjn46YFo6DKNeFsRb5_lu2VnJLVzrsHNtaVFydLIv6Zrs_9KzUjjCWIPl9Fq68YZOo';
+        var convertedVapidPublicKey = urlBase64ToUint8Array(vapidPublicKey);
+        return reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: convertedVapidPublicKey
+        });
+      } else {
+        console.log(sub);
+      }
+    })
+    .then(function(newSub) {
+      fetch('https://pwagram-e4028.firebaseio.com/subscriptions.json', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json'
+        },
+        body: JSON.stringify(newSub)
+      });
+    })
+    .then(function(res) {
+      displayConfirmedNotification();
+    })
+    .catch(function(err) {
+      console.log(err);
+    });
+}
+//NmGVXlhj00kOiQhrf-YCiBHnqa6wqa3olE6DNb6DCNg
+
 function askForNotificationPermission() {
   Notification.requestPermission(function(result) {
     console.log('User Choice', result);
     if (result !== 'granted') {
       console.log('no notification permission granted');
     } else {
-      displayConfirmedNotification();
+      // displayConfirmedNotification();
+      configurePushSub();
     }
   });
 }
 
-if ('Notification' in window) {
+if ('Notification' in window && 'serviceWorker' in navigator) {
   for (var i = 0; i < enableNotificationsButtons.length; i++) {
     enableNotificationsButtons[i].style.display = 'inline-block';
     enableNotificationsButtons[i].addEventListener(
